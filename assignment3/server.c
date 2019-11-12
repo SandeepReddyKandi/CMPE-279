@@ -8,25 +8,26 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <fcntl.h>
 #define PORT 8080 
 #define UID 65534
-#define CHAR_BUF_SIZE 512
+#define CHAR_BUF_SIZE 1024
 #define NO_FILE "File Not Found!"
-#define EMPTY_FOLDER "/Users/huanwenchen/Desktop/homework3/empty_folder"
+#define EMPTY_FOLDER "./empty_folder"
 
 const char *hello = "Hello from server"; 
 void setup_socket();
 void do_execvp();
 void send_message();
 void parse_parameter(int argc, char const *argv[]);
-int read_file(FILE* fp, char* buf, int s);
-void clear_buffer(char* buffer);
 void chroot_to_empty_folder();
 
 int port = PORT;
 char fileName[FILENAME_MAX];
 int socket_id;
 int use_file = 0;
+int fptr;
 
 // Server Running command: ./server -p {PORT_NUM} -f {FILE_NAME}
 // Example: ./server -p 9999 -f test
@@ -134,7 +135,9 @@ void do_execvp()
     
     if (use_file)
     {
-        char *args[] = {"./server", "-s", socket_id_str,"-f", fileName, NULL};
+        char file_descriptor[12];
+        sprintf(file_descriptor, "%d", fptr);
+        char *args[] = {"./server", "-s", socket_id_str, "-d", file_descriptor, NULL};
         if (execvp(args[0], args) < 0) {
             perror("exec");
             exit(EXIT_FAILURE);
@@ -164,31 +167,16 @@ void send_message()
     //case of use file
     if (use_file)
     {
-        FILE *fptr;
-        if ((fptr = fopen(fileName, "r")) == NULL)
-        {
-            printf("Error! opening file");
-            exit(EXIT_FAILURE);
-        }
         char char_buffer[CHAR_BUF_SIZE];
-        while (1)
-        {
-            if (read_file(fptr, char_buffer, CHAR_BUF_SIZE)) 
-            {
-                send(socket_id, char_buffer, CHAR_BUF_SIZE, 0);
-                break;
-            }
-            send(socket_id, char_buffer, CHAR_BUF_SIZE, 0);
-            clear_buffer(char_buffer);
-        }
-        if (fptr != NULL) 
-            fclose(fptr);
+        read(fptr, char_buffer, CHAR_BUF_SIZE);
+        send(socket_id , char_buffer , CHAR_BUF_SIZE, 0 );
+        close(fptr);
     }
     // send hello
     else {
         send(socket_id , hello , strlen(hello) , 0 );
     }
-    printf("Hello message sent\n");
+    printf("Message sent\n");
 }
 
 //parse the paremeter for ./run_server
@@ -203,11 +191,21 @@ void parse_parameter(int argc, char const *argv[])
         else if (strcmp(argv[i], "-f") == 0)
         {
             strcpy(fileName, argv[i+1]);
+            if ((fptr = open(fileName, O_RDONLY)) < 0)
+            {
+                printf("Error! opening file");
+                exit(EXIT_FAILURE);
+            }
             use_file = 1;
         }
         else if (strcmp(argv[i], "-s") == 0)
         {
             socket_id = atoi(argv[i+1]);
+        }
+        else if (strcmp(argv[i], "-d") == 0)
+        {
+            use_file = 1;
+            fptr = atoi(argv[i+1]);
         }
         else
         {
@@ -215,34 +213,6 @@ void parse_parameter(int argc, char const *argv[])
             exit(EXIT_FAILURE);
         }
     }
-}
-
-//Read file within the max buffer size.
-int read_file(FILE* fptr, char* buf, int s) 
-{ 
-    int i, len; 
-    if (fptr == NULL) { 
-        strcpy(buf, NO_FILE); 
-        len = strlen(NO_FILE); 
-        buf[len] = EOF; 
-        return 1; 
-    } 
-  
-    char ch; 
-    for (i = 0; i < s; i++) { 
-        ch = fgetc(fptr); 
-        if (ch == EOF) 
-            return 1; 
-        buf[i] = ch;
-    } 
-    return 0; 
-} 
-
-void clear_buffer(char* buffer) 
-{ 
-    int i; 
-    for (i = 0; i < CHAR_BUF_SIZE; i++) 
-        buffer[i] = '\0'; 
 }
 
 //Create empty folder and change root to empty folder
